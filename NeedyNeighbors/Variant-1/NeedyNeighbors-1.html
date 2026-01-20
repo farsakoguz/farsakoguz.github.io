@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Komşu Puzzle</title>
+  <title>Needy Neighbors</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -179,7 +179,7 @@
   </style>
 </head>
 <body>
-  <h1>🧩 Komşu Puzzle</h1>
+  <h1>🧩 Needy Neighbors</h1>
   
   <div class="difficulty-selector">
     <button class="diff-btn easy active" onclick="setDifficulty('easy')">Kolay</button>
@@ -247,7 +247,7 @@ function generateSolvableLevel() {
   const shuffled = cells.sort(() => Math.random() - 0.5);
   const selectedCells = shuffled.slice(0, tileCount);
   
-  // Her seçilen hücre için komşu sayısını hesapla
+
   const tileData = [];
   selectedCells.forEach(cell => {
     let neighborCount = 0;
