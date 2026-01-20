@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Needy Neighbors</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      color: white;
+    }
+    h1 { font-size: 1.8rem; margin-bottom: 15px; text-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+    .level-selector {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 400px;
+    }
+    .level-btn {
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 600;
+      transition: all 0.2s;
+      background: rgba(255,255,255,0.1);
+      color: white;
+    }
+    .level-btn:hover { background: rgba(255,255,255,0.2); transform: scale(1.05); }
+    .level-btn.active { background: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.5); }
+    .level-btn.completed { background: #22c55e; }
+    .header {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .timer {
+      font-size: 1.5rem;
+      font-weight: bold;
+      background: rgba(255,255,255,0.1);
+      padding: 8px 20px;
+      border-radius: 10px;
+      min-width: 80px;
+      text-align: center;
+    }
+    .timer.warning { color: #ff6b6b; animation: pulse 0.5s infinite; }
+    @keyframes pulse { 50% { opacity: 0.7; } }
+    .status { font-size: 1.1rem; color: rgba(255,255,255,0.7); }
+    .game-container {
+      background: rgba(255,255,255,0.05);
+      border-radius: 15px;
+      padding: 20px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    }
+    .grid {
+      display: grid;
+      gap: 4px;
+      background: rgba(0,0,0,0.3);
+      padding: 10px;
+      border-radius: 10px;
+    }
+    .cell {
+      width: 60px;
+      height: 60px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 8px;
+      position: relative;
+      transition: background 0.2s;
+    }
+    .cell.highlight { background: rgba(255,255,255,0.2); }
+    .cell.invalid-highlight { background: rgba(239,68,68,0.3); }
+    .tile {
+      position: absolute;
+      width: 56px;
+      height: 56px;
+      border-radius: 6px;
+      cursor: grab;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      transition: transform 0.1s, box-shadow 0.2s;
+      z-index: 1;
+      background: #2d3748;
+      border: 2px solid #4a5568;
+    }
+    .tile:active, .tile.dragging {
+      cursor: grabbing;
+      transform: scale(1.1);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+      z-index: 100;
+    }
+    .tile.fixed {
+      background: #1e293b;
+      border-color: #64748b;
+      cursor: not-allowed;
+    }
+    .tile.fixed::before {
+      content: '🔒';
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      font-size: 0.6rem;
+    }
+    .tile.negative {
+      background: linear-gradient(135deg, #4a1942 0%, #2d1f3d 100%);
+      border-color: #9333ea;
+      cursor: not-allowed;
+    }
+    .tile.joker {
+      background: linear-gradient(135deg, #854d0e 0%, #713f12 100%);
+      border-color: #facc15;
+      border-style: double;
+      border-width: 3px;
+    }
+    .tile.directional { border-style: dashed; }
+    .tile.horizontal { border-color: #f59e0b; background: linear-gradient(90deg, #2d3748 0%, #3d4a5c 50%, #2d3748 100%); }
+    .tile.vertical { border-color: #8b5cf6; background: linear-gradient(180deg, #2d3748 0%, #3d4a5c 50%, #2d3748 100%); }
+    .tile-direction {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      font-size: 0.7rem;
+      opacity: 0.8;
+    }
+    .tile-number {
+      font-size: 1.4rem;
+      font-weight: bold;
+      color: white;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      z-index: 2;
+    }
+    .tile.negative .tile-number { color: #f0abfc; }
+    .tile.joker .tile-number { color: #fde047; font-size: 1.6rem; }
+    .tile-bar-bg {
+      position: absolute;
+      bottom: 4px;
+      left: 4px;
+      right: 4px;
+      height: 8px;
+      background: rgba(0,0,0,0.4);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .tile-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s, background 0.3s;
+    }
+    .tile.perfect { border-color: #22c55e; box-shadow: 0 0 15px rgba(34, 197, 94, 0.5); }
+    .tile.overflow { border-color: #ef4444; box-shadow: 0 0 15px rgba(239, 68, 68, 0.5); }
+    .tile.perfect.fixed { border-color: #22c55e; }
+    .tile.overflow.fixed { border-color: #ef4444; }
+    .tile.joker.perfect, .tile.joker.overflow { border-color: #facc15; box-shadow: 0 0 15px rgba(250, 204, 21, 0.5); }
+    .controls { margin-top: 15px; display: flex; gap: 10px; justify-content: center; }
+    .btn {
+      padding: 12px 30px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 600;
+      transition: all 0.2s;
+      background: #3b82f6;
+      color: white;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(59, 130, 246, 0.4); }
+    .btn.restart { background: #8b5cf6; }
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    .overlay.show { opacity: 1; pointer-events: auto; }
+    .overlay h2 { font-size: 3rem; margin-bottom: 20px; }
+    .overlay.win h2 { color: #4ade80; }
+    .overlay.lose h2 { color: #f87171; }
+    .legend {
+      display: flex;
+      gap: 15px;
+      margin-top: 15px;
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.6);
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .legend-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.6rem;
+    }
+    .legend-icon.fixed { background: #1e293b; border: 1px solid #64748b; }
+    .legend-icon.horizontal { background: #2d3748; border: 2px dashed #f59e0b; }
+    .legend-icon.vertical { background: #2d3748; border: 2px dashed #8b5cf6; }
+    .legend-icon.negative { background: #4a1942; border: 1px solid #9333ea; }
+    .legend-icon.joker { background: #854d0e; border: 2px double #facc15; }
+  </style>
+</head>
+<body>
+  <h1>🏘️ Needy Neighbors</h1>
+  
+  <div class="level-selector" id="levelSelector"></div>
+  
+  <div class="header">
+    <div class="timer" id="timer">60</div>
+    <div class="status" id="status">0 / 0 taş yerleşti</div>
+  </div>
+  
+  <div class="game-container">
+    <div class="grid" id="grid"></div>
+  </div>
+  
+  <div class="legend" id="legend"></div>
+  
+  <div class="controls">
+    <button class="btn restart" onclick="restartLevel()">🔄 Yeniden</button>
+  </div>
+  
+  <div class="overlay" id="overlay">
+    <h2 id="overlay-title">Kazandın!</h2>
+    <p id="overlay-text" style="font-size:1.2rem;margin-bottom:20px;"></p>
+    <button class="btn" id="overlay-btn" onclick="nextLevel()">Sonraki Level</button>
+  </div>
+
+<script>
+const LEVELS = [
+  // Level 1-2: Normal
+  { grid: 4, tiles: 4, time: 60, fixed: 0, horizontal: 0, vertical: 0, negative: 0, joker: 0 },
+  { grid: 4, tiles: 5, time: 60, fixed: 0, horizontal: 0, vertical: 0, negative: 0, joker: 0 },
+  // Level 3-4: Sabit taşlar
+  { grid: 4, tiles: 5, time: 70, fixed: 2, horizontal: 0, vertical: 0, negative: 0, joker: 0 },
+  { grid: 5, tiles: 7, time: 80, fixed: 2, horizontal: 0, vertical: 0, negative: 0, joker: 0 },
+  // Level 5-6: Yönlü taşlar
+  { grid: 5, tiles: 6, time: 80, fixed: 0, horizontal: 2, vertical: 1, negative: 0, joker: 0 },
+  { grid: 5, tiles: 8, time: 90, fixed: 0, horizontal: 2, vertical: 2, negative: 0, joker: 0 },
+  // Level 7-8: Negatif ve Joker
+  { grid: 5, tiles: 6, time: 80, fixed: 0, horizontal: 0, vertical: 0, negative: 2, joker: 0 },
+  { grid: 5, tiles: 7, time: 90, fixed: 0, horizontal: 0, vertical: 0, negative: 1, joker: 2 },
+  // Level 9-10: Mix
+  { grid: 6, tiles: 10, time: 100, fixed: 1, horizontal: 2, vertical: 1, negative: 2, joker: 1 },
+  { grid: 6, tiles: 12, time: 120, fixed: 2, horizontal: 2, vertical: 2, negative: 2, joker: 2 },
+];
+
+let currentLevel = 0;
+let completedLevels = new Set();
+let gridSize, grid, tiles, timerInterval, timeLeft;
+let draggedTile = null;
+let dragOffsetX, dragOffsetY;
+
+function initLevelSelector() {
+  const selector = document.getElementById('levelSelector');
+  selector.innerHTML = '';
+  for (let i = 0; i < LEVELS.length; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'level-btn' + (i === currentLevel ? ' active' : '') + (completedLevels.has(i) ? ' completed' : '');
+    btn.textContent = i + 1;
+    btn.onclick = () => selectLevel(i);
+    selector.appendChild(btn);
+  }
+}
+
+function selectLevel(level) {
+  currentLevel = level;
+  initLevelSelector();
+  startLevel();
+}
+
+function generateLevel() {
+  const config = LEVELS[currentLevel];
+  gridSize = config.grid;
+  
+  // Tüm hücreleri listele
+  const allCells = [];
+  for (let y = 0; y < gridSize; y++) {
+    for (let x = 0; x < gridSize; x++) {
+      allCells.push({ x, y });
+    }
+  }
+  
+  // Önce negatif taşların pozisyonlarını belirle (sabit, çözüm hesabına dahil)
+  const shuffledForNegative = [...allCells].sort(() => Math.random() - 0.5);
+  const negativeCells = shuffledForNegative.slice(0, config.negative);
+  
+  // Kalan hücrelerden çözüm pozisyonlarını seç
+  const remainingCells = allCells.filter(c => !negativeCells.some(n => n.x === c.x && n.y === c.y));
+  const shuffledRemaining = remainingCells.sort(() => Math.random() - 0.5);
+  
+  const normalTileCount = config.tiles;
+  const solutionCells = shuffledRemaining.slice(0, normalTileCount);
+  
+  // Tüm taşları (negatif + normal) birleştir ve komşu sayılarını hesapla
+  const allTileCells = [...negativeCells, ...solutionCells];
+  
+  // Her normal taş için hedef komşu sayısını hesapla
+  const tileData = [];
+  
+  // Negatif taşlar
+  negativeCells.forEach(cell => {
+    tileData.push({
+      solutionX: cell.x,
+      solutionY: cell.y,
+      target: -1, // Özel değer, negatif taş
+      type: 'negative'
+    });
+  });
+  
+  // Normal taşlar - komşu sayısı hesapla (negatifler -1, diğerleri +1)
+  solutionCells.forEach(cell => {
+    let neighborCount = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = cell.x + dx;
+        const ny = cell.y + dy;
+        
+        // Negatif taş mı kontrol et
+        if (negativeCells.some(c => c.x === nx && c.y === ny)) {
+          neighborCount -= 1;
+        } else if (solutionCells.some(c => c.x === nx && c.y === ny)) {
+          neighborCount += 1;
+        }
+      }
+    }
+    tileData.push({
+      solutionX: cell.x,
+      solutionY: cell.y,
+      target: Math.max(0, neighborCount), // Negatif olamaz
+      type: 'normal'
+    });
+  });
+  
+  // Taş tiplerini ata (negatifler hariç)
+  const normalIndices = tileData.map((t, i) => t.type === 'normal' ? i : -1).filter(i => i >= 0);
+  const shuffledIndices = [...normalIndices].sort(() => Math.random() - 0.5);
+  
+  let idx = 0;
+  const fixedIndices = shuffledIndices.slice(idx, idx + config.fixed); idx += config.fixed;
+  const horizontalIndices = shuffledIndices.slice(idx, idx + config.horizontal); idx += config.horizontal;
+  const verticalIndices = shuffledIndices.slice(idx, idx + config.vertical); idx += config.vertical;
+  const jokerIndices = shuffledIndices.slice(idx, idx + config.joker);
+  
+  // Joker taşların hedefini kaldır
+  jokerIndices.forEach(i => {
+    tileData[i].type = 'joker';
+    tileData[i].target = -2; // Joker özel değeri
+  });
+  
+  // Sabit, yatay, dikey tiplerini ata
+  fixedIndices.forEach(i => tileData[i].type = 'fixed');
+  horizontalIndices.forEach(i => tileData[i].type = 'horizontal');
+  verticalIndices.forEach(i => tileData[i].type = 'vertical');
+  
+  // Taşları oluştur
+  tiles = [];
+  const usedPositions = new Set();
+  
+  tileData.forEach((data, i) => {
+    let startX, startY, lockedRow = null, lockedCol = null;
+    
+    if (data.type === 'negative' || data.type === 'fixed') {
+      // Sabit pozisyon
+      startX = data.solutionX;
+      startY = data.solutionY;
+    } else if (data.type === 'horizontal') {
+      lockedRow = data.solutionY;
+      const availableCols = [];
+      for (let x = 0; x < gridSize; x++) {
+        if (!usedPositions.has(`${x},${lockedRow}`)) availableCols.push(x);
+      }
+      startX = availableCols[Math.floor(Math.random() * availableCols.length)];
+      startY = lockedRow;
+    } else if (data.type === 'vertical') {
+      lockedCol = data.solutionX;
+      const availableRows = [];
+      for (let y = 0; y < gridSize; y++) {
+        if (!usedPositions.has(`${lockedCol},${y}`)) availableRows.push(y);
+      }
+      startY = availableRows[Math.floor(Math.random() * availableRows.length)];
+      startX = lockedCol;
+    } else {
+      // Normal veya Joker - rastgele pozisyon
+      const available = allCells.filter(p => !usedPositions.has(`${p.x},${p.y}`));
+      const pos = available[Math.floor(Math.random() * available.length)];
+      startX = pos.x;
+      startY = pos.y;
+    }
+    
+    usedPositions.add(`${startX},${startY}`);
+    
+    tiles.push({
+      id: i,
+      x: startX,
+      y: startY,
+      target: data.target,
+      type: data.type,
+      lockedRow,
+      lockedCol
+    });
+  });
+  
+  return tiles;
+}
+
+function createGrid() {
+  const gridEl = document.getElementById('grid');
+  gridEl.innerHTML = '';
+  gridEl.style.gridTemplateColumns = `repeat(${gridSize}, 60px)`;
+  
+  grid = [];
+  for (let y = 0; y < gridSize; y++) {
+    grid[y] = [];
+    for (let x = 0; x < gridSize; x++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.x = x;
+      cell.dataset.y = y;
+      gridEl.appendChild(cell);
+      grid[y][x] = { el: cell, tile: null };
+    }
+  }
+  
+  tiles.forEach(tile => {
+    const tileEl = document.createElement('div');
+    tileEl.className = 'tile';
+    
+    if (tile.type === 'fixed') tileEl.classList.add('fixed');
+    if (tile.type === 'negative') tileEl.classList.add('negative', 'fixed');
+    if (tile.type === 'joker') tileEl.classList.add('joker');
+    if (tile.type === 'horizontal') tileEl.classList.add('directional', 'horizontal');
+    if (tile.type === 'vertical') tileEl.classList.add('directional', 'vertical');
+    
+    tileEl.dataset.id = tile.id;
+    
+    let directionIcon = '';
+    if (tile.type === 'horizontal') directionIcon = '<span class="tile-direction">↔</span>';
+    if (tile.type === 'vertical') directionIcon = '<span class="tile-direction">↕</span>';
+    
+    let displayNumber = tile.target;
+    if (tile.type === 'negative') displayNumber = '-1';
+    if (tile.type === 'joker') displayNumber = '★';
+    
+    const showBar = tile.type !== 'negative' && tile.type !== 'joker';
+    
+    tileEl.innerHTML = `
+      ${directionIcon}
+      <span class="tile-number">${displayNumber}</span>
+      ${showBar ? '<div class="tile-bar-bg"><div class="tile-bar-fill"></div></div>' : ''}
+    `;
+    
+    const cell = grid[tile.y][tile.x];
+    cell.el.appendChild(tileEl);
+    cell.tile = tile;
+    tile.el = tileEl;
+    
+    if (tile.type !== 'fixed' && tile.type !== 'negative') {
+      tileEl.addEventListener('mousedown', startDrag);
+      tileEl.addEventListener('touchstart', startDrag, { passive: false });
+    }
+  });
+  
+  updateAllTiles();
+  updateLegend();
+}
+
+function updateLegend() {
+  const legend = document.getElementById('legend');
+  const config = LEVELS[currentLevel];
+  
+  let html = '';
+  if (config.fixed > 0) {
+    html += '<div class="legend-item"><div class="legend-icon fixed">🔒</div> Sabit</div>';
+  }
+  if (config.horizontal > 0) {
+    html += '<div class="legend-item"><div class="legend-icon horizontal">↔</div> Yatay</div>';
+  }
+  if (config.vertical > 0) {
+    html += '<div class="legend-item"><div class="legend-icon vertical">↕</div> Dikey</div>';
+  }
+  if (config.negative > 0) {
+    html += '<div class="legend-item"><div class="legend-icon negative">-1</div> Negatif</div>';
+  }
+  if (config.joker > 0) {
+    html += '<div class="legend-item"><div class="legend-icon joker">★</div> Joker</div>';
+  }
+  legend.innerHTML = html;
+}
+
+function isValidMove(tile, targetX, targetY) {
+  if (tile.type === 'horizontal') {
+    return targetY === tile.lockedRow;
+  }
+  if (tile.type === 'vertical') {
+    return targetX === tile.lockedCol;
+  }
+  return true;
+}
+
+function startDrag(e) {
+  e.preventDefault();
+  const tileEl = e.target.closest('.tile');
+  if (!tileEl) return;
+  
+  draggedTile = tiles.find(t => t.id === parseInt(tileEl.dataset.id));
+  if (draggedTile.type === 'fixed' || draggedTile.type === 'negative') return;
+  
+  tileEl.classList.add('dragging');
+  
+  const rect = tileEl.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  
+  dragOffsetX = clientX - rect.left;
+  dragOffsetY = clientY - rect.top;
+  
+  document.body.appendChild(tileEl);
+  tileEl.style.position = 'fixed';
+  tileEl.style.left = (clientX - dragOffsetX) + 'px';
+  tileEl.style.top = (clientY - dragOffsetY) + 'px';
+  
+  grid[draggedTile.y][draggedTile.x].tile = null;
+  
+  document.addEventListener('mousemove', onDrag);
+  document.addEventListener('mouseup', endDrag);
+  document.addEventListener('touchmove', onDrag, { passive: false });
+  document.addEventListener('touchend', endDrag);
+}
+
+function onDrag(e) {
+  if (!draggedTile) return;
+  e.preventDefault();
+  
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  
+  draggedTile.el.style.left = (clientX - dragOffsetX) + 'px';
+  draggedTile.el.style.top = (clientY - dragOffsetY) + 'px';
+  
+  document.querySelectorAll('.cell').forEach(c => c.classList.remove('highlight', 'invalid-highlight'));
+  const targetCell = getCellAt(clientX, clientY);
+  if (targetCell && !grid[targetCell.y][targetCell.x].tile) {
+    const valid = isValidMove(draggedTile, targetCell.x, targetCell.y);
+    grid[targetCell.y][targetCell.x].el.classList.add(valid ? 'highlight' : 'invalid-highlight');
+  }
+}
+
+function endDrag(e) {
+  if (!draggedTile) return;
+  
+  const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+  const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+  
+  document.querySelectorAll('.cell').forEach(c => c.classList.remove('highlight', 'invalid-highlight'));
+  
+  let targetCell = getCellAt(clientX, clientY);
+  
+  if (!targetCell || grid[targetCell.y][targetCell.x].tile || !isValidMove(draggedTile, targetCell.x, targetCell.y)) {
+    targetCell = { x: draggedTile.x, y: draggedTile.y };
+  }
+  
+  draggedTile.x = targetCell.x;
+  draggedTile.y = targetCell.y;
+  
+  const cell = grid[targetCell.y][targetCell.x];
+  cell.tile = draggedTile;
+  
+  draggedTile.el.style.position = 'absolute';
+  draggedTile.el.style.left = '2px';
+  draggedTile.el.style.top = '2px';
+  draggedTile.el.classList.remove('dragging');
+  cell.el.appendChild(draggedTile.el);
+  
+  draggedTile = null;
+  
+  document.removeEventListener('mousemove', onDrag);
+  document.removeEventListener('mouseup', endDrag);
+  document.removeEventListener('touchmove', onDrag);
+  document.removeEventListener('touchend', endDrag);
+  
+  updateAllTiles();
+  checkWin();
+}
+
+function getCellAt(clientX, clientY) {
+  for (let y = 0; y < gridSize; y++) {
+    for (let x = 0; x < gridSize; x++) {
+      const rect = grid[y][x].el.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right &&
+          clientY >= rect.top && clientY <= rect.bottom) {
+        return { x, y };
+      }
+    }
+  }
+  return null;
+}
+
+function countNeighbors(tile) {
+  let count = 0;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const nx = tile.x + dx;
+      const ny = tile.y + dy;
+      if (nx >= 0 && nx < gridSize && ny >= 0 && ny < gridSize) {
+        const neighborTile = grid[ny][nx].tile;
+        if (neighborTile) {
+          if (neighborTile.type === 'negative') {
+            count -= 1;
+          } else {
+            count += 1;
+          }
+        }
+      }
+    }
+  }
+  return Math.max(0, count);
+}
+
+function updateAllTiles() {
+  let perfectCount = 0;
+  let totalToSolve = 0;
+  
+  tiles.forEach(tile => {
+    // Negatif ve Joker taşlar solve edilmesi gerekmiyor
+    if (tile.type === 'negative' || tile.type === 'joker') return;
+    
+    totalToSolve++;
+    
+    const neighbors = countNeighbors(tile);
+    const target = tile.target;
+    const ratio = target === 0 ? (neighbors === 0 ? 1 : 0) : Math.min(neighbors / target, 1);
+    const bar = tile.el.querySelector('.tile-bar-fill');
+    
+    if (bar) {
+      bar.style.width = (ratio * 100) + '%';
+      
+      tile.el.classList.remove('perfect', 'overflow');
+      
+      if (neighbors === target) {
+        bar.style.background = '#22c55e';
+        tile.el.classList.add('perfect');
+        perfectCount++;
+      } else if (neighbors > target) {
+        bar.style.background = '#ef4444';
+        bar.style.width = '100%';
+        tile.el.classList.add('overflow');
+      } else {
+        bar.style.background = '#4a7c59';
+      }
+    }
+  });
+  
+  document.getElementById('status').textContent = `${perfectCount} / ${totalToSolve} taş yerleşti`;
+}
+
+function checkWin() {
+  const normalTiles = tiles.filter(t => t.type !== 'negative' && t.type !== 'joker');
+  const allPerfect = normalTiles.every(tile => countNeighbors(tile) === tile.target);
+  
+  if (allPerfect) {
+    clearInterval(timerInterval);
+    completedLevels.add(currentLevel);
+    initLevelSelector();
+    showOverlay(true);
+  }
+}
+
+function startTimer() {
+  timeLeft = LEVELS[currentLevel].time;
+  updateTimerDisplay();
+  
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    updateTimerDisplay();
+    
+    if (timeLeft <= 0) {
+      clearInterval(timerInterval);
+      showOverlay(false);
+    }
+  }, 1000);
+}
+
+function updateTimerDisplay() {
+  const timerEl = document.getElementById('timer');
+  timerEl.textContent = timeLeft;
+  timerEl.classList.toggle('warning', timeLeft <= 10);
+}
+
+function showOverlay(win) {
+  const overlay = document.getElementById('overlay');
+  const title = document.getElementById('overlay-title');
+  const text = document.getElementById('overlay-text');
+  const btn = document.getElementById('overlay-btn');
+  
+  overlay.className = 'overlay show ' + (win ? 'win' : 'lose');
+  title.textContent = win ? '🎉 Kazandın!' : '⏰ Süre Doldu!';
+  text.textContent = win ? `${timeLeft} saniye kaldı!` : 'Tekrar dene!';
+  
+  if (win && currentLevel < LEVELS.length - 1) {
+    btn.textContent = 'Sonraki Level →';
+    btn.onclick = nextLevel;
+  } else if (win) {
+    btn.textContent = 'Tüm Leveller Tamamlandı! 🎊';
+    btn.onclick = () => selectLevel(0);
+  } else {
+    btn.textContent = 'Tekrar Dene';
+    btn.onclick = restartLevel;
+  }
+}
+
+function nextLevel() {
+  if (currentLevel < LEVELS.length - 1) {
+    currentLevel++;
+    initLevelSelector();
+  }
+  startLevel();
+}
+
+function restartLevel() {
+  startLevel();
+}
+
+function startLevel() {
+  clearInterval(timerInterval);
+  document.getElementById('overlay').classList.remove('show');
+  generateLevel();
+  createGrid();
+  startTimer();
+}
+
+initLevelSelector();
+startLevel();
+</script>
+</body>
+</html>
