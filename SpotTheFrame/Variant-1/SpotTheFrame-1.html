@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spot the Frame</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d0d0d;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+      font-family: Arial, sans-serif;
+      user-select: none;
+    }
+    .title { color: white; font-size: 22px; font-weight: bold; margin-bottom: 4px; }
+    .level { color: #888; font-size: 14px; margin-bottom: 12px; }
+    
+    .timer-bar {
+      width: 300px;
+      height: 8px;
+      background: #333;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .timer-fill {
+      height: 100%;
+      background: #2ecc71;
+      transition: width 0.1s linear, background 0.3s;
+      border-radius: 4px;
+    }
+    .timer-fill.warning { background: #f39c12; }
+    .timer-fill.danger { background: #e74c3c; }
+    
+    .targets-container {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .target-item {
+      position: relative;
+      border: 3px solid #e94560;
+      border-radius: 4px;
+    }
+    .target-item.found {
+      border-color: #2ecc71;
+      opacity: 0.6;
+    }
+    .target-item.found::after {
+      content: '✓';
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(46, 204, 113, 0.5);
+      color: white;
+      font-size: 24px;
+      font-weight: bold;
+    }
+    
+    #mainCanvas {
+      border: 2px solid #333;
+      border-radius: 8px;
+      cursor: move;
+    }
+    .viewport-container { position: relative; }
+    
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    .overlay.show { opacity: 1; pointer-events: auto; }
+    
+    .overlay-title {
+      font-size: 32px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    .overlay-title.success { color: #2ecc71; }
+    .overlay-title.fail { color: #e74c3c; }
+    
+    .overlay-sub { color: #888; font-size: 14px; margin-bottom: 16px; }
+    
+    .controls { margin-top: 12px; color: #666; font-size: 11px; text-align: center; }
+    .controls p { margin: 2px 0; }
+    
+    .btn {
+      margin-top: 8px;
+      padding: 10px 20px;
+      background: #e94560;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .btn:hover { background: #d63850; }
+    
+    .found-flash {
+      position: absolute;
+      inset: 0;
+      background: rgba(46, 204, 113, 0.4);
+      border-radius: 8px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s;
+    }
+    .found-flash.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="title">SPOT THE FRAME</div>
+  <div class="level">Level <span id="levelNum">1</span></div>
+  
+  <div class="timer-bar">
+    <div class="timer-fill" id="timerFill"></div>
+  </div>
+  
+  <div class="targets-container" id="targetsContainer"></div>
+  
+  <div class="viewport-container">
+    <canvas id="mainCanvas" width="300" height="300"></canvas>
+    <div class="found-flash" id="foundFlash"></div>
+    <div class="overlay" id="overlay">
+      <div class="overlay-title" id="overlayTitle">LEVEL COMPLETE!</div>
+      <div class="overlay-sub" id="overlaySub"></div>
+      <button class="btn" id="overlayBtn">Devam</button>
+    </div>
+  </div>
+  
+  <div class="controls">
+    <p>🖱️ Sürükle: Hareket | 🔄 Tekerlek: Zoom</p>
+  </div>
+
+  <script>
+    const mainCanvas = document.getElementById('mainCanvas');
+    const mainCtx = mainCanvas.getContext('2d');
+    const targetsContainer = document.getElementById('targetsContainer');
+    const timerFill = document.getElementById('timerFill');
+    const overlay = document.getElementById('overlay');
+    const overlayTitle = document.getElementById('overlayTitle');
+    const overlaySub = document.getElementById('overlaySub');
+    const overlayBtn = document.getElementById('overlayBtn');
+    const levelNum = document.getElementById('levelNum');
+    const foundFlash = document.getElementById('foundFlash');
+
+    const imageSize = 512;
+    const viewportSize = 300;
+    const frameSize = 48;
+    const targetDisplaySize = 56;
+    const tolerance = 20;
+    const baseTime = 15; // saniye
+    const timePerTarget = 10; // her hedef için ek süre
+
+    let zoom = 1;
+    let pan = { x: 0, y: 0 };
+    let isDragging = false;
+    let lastPos = { x: 0, y: 0 };
+    let level = 1;
+    let targets = [];
+    let timeLeft = 0;
+    let timerInterval = null;
+    let gameActive = false;
+
+    // Offscreen canvas for pattern
+    const patternCanvas = document.createElement('canvas');
+    patternCanvas.width = imageSize;
+    patternCanvas.height = imageSize;
+    const patternCtx = patternCanvas.getContext('2d');
+
+    function seededRandom(seed) {
+      const x = Math.sin(seed * 9999) * 10000;
+      return x - Math.floor(x);
+    }
+
+    function drawPattern(levelSeed) {
+      const ctx = patternCtx;
+      const size = imageSize;
+
+      const gradient = ctx.createLinearGradient(0, 0, size, size);
+      gradient.addColorStop(0, `hsl(${levelSeed * 40 % 360}, 30%, 12%)`);
+      gradient.addColorStop(0.5, `hsl(${(levelSeed * 40 + 30) % 360}, 30%, 15%)`);
+      gradient.addColorStop(1, `hsl(${(levelSeed * 40 + 60) % 360}, 30%, 10%)`);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+
+      for (let i = 0; i < 60; i++) {
+        const seed = i * 137.5 + levelSeed * 1000;
+        const b = {
+          x: seededRandom(seed) * size,
+          y: seededRandom(seed + 1) * size,
+          r: 20 + seededRandom(seed + 2) * 40,
+          color: `hsl(${seededRandom(seed + 3) * 360}, 70%, 50%)`,
+          type: Math.floor(seededRandom(seed + 4) * 5)
+        };
+
+        ctx.fillStyle = b.color;
+        ctx.beginPath();
+
+        if (b.type === 0) {
+          ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+        } else if (b.type === 1) {
+          ctx.moveTo(b.x, b.y - b.r);
+          ctx.lineTo(b.x + b.r, b.y + b.r * 0.7);
+          ctx.lineTo(b.x - b.r, b.y + b.r * 0.7);
+        } else if (b.type === 2) {
+          for (let j = 0; j < 5; j++) {
+            const angle = (j * 4 * Math.PI) / 5 - Math.PI / 2;
+            ctx.lineTo(b.x + Math.cos(angle) * b.r, b.y + Math.sin(angle) * b.r);
+            const innerAngle = angle + Math.PI / 5;
+            ctx.lineTo(b.x + Math.cos(innerAngle) * b.r * 0.4, b.y + Math.sin(innerAngle) * b.r * 0.4);
+          }
+        } else if (b.type === 3) {
+          for (let j = 0; j < 6; j++) {
+            const angle = (j * Math.PI) / 3;
+            const px = b.x + Math.cos(angle) * b.r;
+            const py = b.y + Math.sin(angle) * b.r;
+            j === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+          }
+        } else {
+          ctx.save();
+          ctx.translate(b.x, b.y);
+          ctx.rotate(seededRandom(b.x * b.y) * Math.PI);
+          ctx.rect(-b.r/2, -b.r/2, b.r, b.r);
+          ctx.restore();
+        }
+
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.beginPath();
+        ctx.arc(b.x - b.r * 0.2, b.y - b.r * 0.2, b.r * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 20; i++) {
+        const seed = i * 50 + levelSeed * 500;
+        ctx.beginPath();
+        ctx.moveTo(seededRandom(seed) * size, seededRandom(seed + 25) * size);
+        for (let j = 0; j < 5; j++) {
+          ctx.quadraticCurveTo(
+            seededRandom(seed + j * 10) * size,
+            seededRandom(seed + j * 10 + 5) * size,
+            seededRandom(seed + j * 10 + 2) * size,
+            seededRandom(seed + j * 10 + 7) * size
+          );
+        }
+        ctx.stroke();
+      }
+
+      for (let i = 0; i < 100; i++) {
+        const seed = i * 77 + levelSeed * 300;
+        const x = seededRandom(seed) * size;
+        const y = seededRandom(seed + 33) * size;
+        const r = 2 + seededRandom(seed + 66) * 5;
+        ctx.fillStyle = `hsla(${seededRandom(seed + 99) * 360}, 80%, 70%, 0.8)`;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.font = 'bold 24px Arial';
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      for (let i = 0; i < 15; i++) {
+        const seed = i * 111 + levelSeed * 200;
+        const x = 50 + seededRandom(seed) * (size - 100);
+        const y = 50 + seededRandom(seed + 55) * (size - 100);
+        ctx.fillStyle = `hsla(${seededRandom(seed * 2) * 360}, 60%, 60%, 0.7)`;
+        ctx.fillText(chars[(i + levelSeed) % chars.length], x, y);
+      }
+    }
+
+    function generateTargets(count) {
+      const margin = frameSize + 30;
+      const minDist = frameSize * 2;
+      const newTargets = [];
+
+      for (let i = 0; i < count; i++) {
+        let attempts = 0;
+        let pos;
+        do {
+          pos = {
+            x: margin + Math.random() * (imageSize - margin * 2),
+            y: margin + Math.random() * (imageSize - margin * 2),
+            found: false
+          };
+          attempts++;
+        } while (attempts < 100 && newTargets.some(t => 
+          Math.abs(t.x - pos.x) < minDist && Math.abs(t.y - pos.y) < minDist
+        ));
+        newTargets.push(pos);
+      }
+      return newTargets;
+    }
+
+    function renderTargetCanvases() {
+      targetsContainer.innerHTML = '';
+      targets.forEach((t, i) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = targetDisplaySize;
+        canvas.height = targetDisplaySize;
+        canvas.className = 'target-item' + (t.found ? ' found' : '');
+        canvas.dataset.index = i;
+
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#0d0d0d';
+        ctx.fillRect(0, 0, targetDisplaySize, targetDisplaySize);
+
+        const padding = 4;
+        ctx.drawImage(
+          patternCanvas,
+          t.x - frameSize / 2, t.y - frameSize / 2, frameSize, frameSize,
+          padding, padding, targetDisplaySize - padding * 2, targetDisplaySize - padding * 2
+        );
+
+        targetsContainer.appendChild(canvas);
+      });
+    }
+
+    function getCurrentFramePos() {
+      return {
+        x: (viewportSize / 2 - pan.x) / zoom,
+        y: (viewportSize / 2 - pan.y) / zoom
+      };
+    }
+
+    function checkMatch() {
+      if (!gameActive) return;
+      
+      const current = getCurrentFramePos();
+      
+      for (let i = 0; i < targets.length; i++) {
+        if (targets[i].found) continue;
+        
+        const dx = Math.abs(current.x - targets[i].x);
+        const dy = Math.abs(current.y - targets[i].y);
+
+        if (dx < tolerance && dy < tolerance && Math.abs(zoom - 1) < 0.3) {
+          targets[i].found = true;
+          renderTargetCanvases();
+          showFoundFlash();
+          
+          if (targets.every(t => t.found)) {
+            levelComplete();
+          }
+          return;
+        }
+      }
+    }
+
+    function showFoundFlash() {
+      foundFlash.classList.add('show');
+      setTimeout(() => foundFlash.classList.remove('show'), 200);
+    }
+
+    function startTimer() {
+      timeLeft = baseTime + (level * timePerTarget);
+      updateTimerDisplay();
+      
+      timerInterval = setInterval(() => {
+        timeLeft -= 0.1;
+        updateTimerDisplay();
+        
+        if (timeLeft <= 0) {
+          timeLeft = 0;
+          gameOver();
+        }
+      }, 100);
+    }
+
+    function updateTimerDisplay() {
+      const maxTime = baseTime + (level * timePerTarget);
+      const percent = (timeLeft / maxTime) * 100;
+      timerFill.style.width = percent + '%';
+      
+      timerFill.classList.remove('warning', 'danger');
+      if (percent < 20) {
+        timerFill.classList.add('danger');
+      } else if (percent < 40) {
+        timerFill.classList.add('warning');
+      }
+    }
+
+    function stopTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+    }
+
+    function levelComplete() {
+      gameActive = false;
+      stopTimer();
+      
+      overlayTitle.textContent = 'LEVEL TAMAMLANDI!';
+      overlayTitle.className = 'overlay-title success';
+      overlaySub.textContent = `${level} hedef bulundu! Kalan süre: ${timeLeft.toFixed(1)}s`;
+      overlayBtn.textContent = 'Sonraki Level';
+      overlay.classList.add('show');
+    }
+
+    function gameOver() {
+      gameActive = false;
+      stopTimer();
+      
+      const foundCount = targets.filter(t => t.found).length;
+      overlayTitle.textContent = 'SÜRE DOLDU!';
+      overlayTitle.className = 'overlay-title fail';
+      overlaySub.textContent = `${foundCount}/${targets.length} hedef bulundu. Level ${level}'de kaldın.`;
+      overlayBtn.textContent = 'Tekrar Dene';
+      overlay.classList.add('show');
+    }
+
+    function startLevel() {
+      overlay.classList.remove('show');
+      levelNum.textContent = level;
+      
+      drawPattern(level);
+      targets = generateTargets(level);
+      renderTargetCanvases();
+      
+      pan = { x: 0, y: 0 };
+      zoom = 1;
+      gameActive = true;
+      
+      draw();
+      startTimer();
+    }
+
+    function draw() {
+      mainCtx.fillStyle = '#0d0d0d';
+      mainCtx.fillRect(0, 0, viewportSize, viewportSize);
+
+      mainCtx.save();
+      mainCtx.translate(pan.x, pan.y);
+      mainCtx.scale(zoom, zoom);
+      mainCtx.drawImage(patternCanvas, 0, 0);
+      mainCtx.restore();
+
+      const frameOffset = frameSize / 2;
+      mainCtx.strokeStyle = '#fff';
+      mainCtx.lineWidth = 3;
+      mainCtx.strokeRect(
+        viewportSize / 2 - frameOffset,
+        viewportSize / 2 - frameOffset,
+        frameSize,
+        frameSize
+      );
+    }
+
+    // Mouse events
+    mainCanvas.addEventListener('mousedown', (e) => {
+      if (!gameActive) return;
+      isDragging = true;
+      lastPos = { x: e.clientX, y: e.clientY };
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging || !gameActive) return;
+      const dx = e.clientX - lastPos.x;
+      const dy = e.clientY - lastPos.y;
+      pan.x += dx;
+      pan.y += dy;
+      lastPos = { x: e.clientX, y: e.clientY };
+      draw();
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        checkMatch();
+      }
+    });
+
+    mainCanvas.addEventListener('wheel', (e) => {
+      if (!gameActive) return;
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      zoom = Math.max(0.5, Math.min(3, zoom * delta));
+      draw();
+    });
+
+    overlayBtn.addEventListener('click', () => {
+      if (overlayBtn.textContent === 'Tekrar Dene') {
+        level = 1;
+      } else {
+        level++;
+      }
+      startLevel();
+    });
+
+    // Init
+    startLevel();
+  </script>
+</body>
+</html>
