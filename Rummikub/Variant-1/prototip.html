@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Per & Seri — prototip</title>
+<style>
+  :root{
+    --felt:#1e4b3c; --felt-dark:#153a2e;
+    --ivory:#f4ecd9; --ivory-shade:#d9cdb2; --ink:#1d1d1b;
+    --red:#b8352a; --blue:#26589c; --amber:#b57a0e; --black:#2a2a2a;
+    --u:52px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+  html,body{margin:0;height:100%;background:var(--felt-dark);color:var(--ivory);font-family:"Avenir Next","Segoe UI",system-ui,sans-serif;overscroll-behavior:none}
+  body{display:flex;justify-content:center}
+  #app{width:100%;max-width:480px;min-height:100vh;display:flex;flex-direction:column;background:var(--felt);
+       background-image:radial-gradient(ellipse at 50% 30%,rgba(255,255,255,.06),transparent 70%)}
+
+  header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 6px}
+  header .stats{display:flex;gap:18px;font-size:14px;line-height:1.2}
+  header .stats b{display:block;font-size:20px;font-weight:700}
+  header .stats span{opacity:.7}
+  .tools{display:flex;gap:8px}
+  button{font:inherit;border:0;cursor:pointer}
+  .tool{background:rgba(0,0,0,.25);color:var(--ivory);padding:8px 12px;border-radius:8px;font-size:13px}
+  .tool:disabled{opacity:.35;cursor:default}
+  .tool:focus-visible,.primary:focus-visible{outline:2px solid var(--ivory);outline-offset:2px}
+
+  #hint{margin:6px 16px 0;min-height:38px;padding:9px 14px;border-radius:10px;background:rgba(255,224,138,.16);color:#ffe9b0;font-size:14px;line-height:1.35;text-align:center}
+  #hint:empty{display:none}
+  .tile.locked{filter:brightness(.45) saturate(.2);cursor:default}
+  #boardWrap{padding:8px 16px 0;flex:1;display:flex;align-items:center;justify-content:center;touch-action:none}
+  #board{position:relative;width:100%;aspect-ratio:1/1;max-height:50vh;max-width:min(100%,50vh)}
+
+  .tile{position:absolute;width:calc(var(--u)*.94);height:calc(var(--u)*1.18);border-radius:calc(var(--u)*.12);
+        background:linear-gradient(170deg,#fbf5e6,var(--ivory) 60%,var(--ivory-shade));
+        box-shadow:0 2px 0 var(--ivory-shade),0 4px 8px rgba(0,0,0,.45);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;
+        transition:transform .12s ease,filter .15s,opacity .15s,box-shadow .15s;cursor:pointer;color:var(--ink);touch-action:none}
+  .tile .n{font-size:calc(var(--u)*.56);font-weight:800;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .tile .s{font-size:calc(var(--u)*.22);line-height:1;margin-top:calc(var(--u)*.06)}
+  .tile.c0 .n,.tile.c0 .s{color:var(--red)}
+  .tile.c1 .n,.tile.c1 .s{color:var(--blue)}
+  .tile.c2 .n,.tile.c2 .s{color:var(--amber)}
+  .tile.c3 .n,.tile.c3 .s{color:var(--black)}
+  .tile.joker{background:linear-gradient(160deg,#fff7dc,#f0dcb0)}
+  .tile.joker .n{background:linear-gradient(90deg,var(--red),var(--amber),var(--blue),var(--black));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .tile.covered{filter:brightness(.55) saturate(.4);cursor:default;box-shadow:0 1px 0 var(--ivory-shade),0 2px 4px rgba(0,0,0,.5)}
+  .tile.free:hover{transform:translateY(-2px)}
+  .tile.dragging{opacity:.25}
+  .ghost{position:fixed;left:0;top:0;z-index:2000;pointer-events:none;transform-origin:center;box-shadow:0 12px 24px rgba(0,0,0,.5);transition:none}
+
+  #trayWrap{padding:10px 16px 18px;touch-action:none}
+  #tray{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;background:rgba(0,0,0,.28);border-radius:14px;padding:10px;
+        box-shadow:inset 0 2px 6px rgba(0,0,0,.4)}
+  .slot{aspect-ratio:.8;border-radius:8px;background:rgba(0,0,0,.25);border:1px dashed rgba(255,255,255,.12);position:relative}
+  .slot.over{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.5)}
+  .slot .tile{position:absolute;inset:0;width:100%;height:100%;cursor:grab;animation:drop .16s ease-out}
+  .slot .tile.ready{box-shadow:0 0 0 2px #ffe08a,0 0 14px #ffd35c,0 2px 0 var(--ivory-shade);cursor:pointer}
+  .slot .tile.clearing{animation:pop .26s ease-in forwards}
+  @keyframes drop{from{transform:translateY(-18px) scale(.9);opacity:0}}
+  @keyframes pop{60%{transform:scale(1.12);box-shadow:0 0 0 3px #fff,0 0 22px #ffe9a3}to{transform:scale(.3);opacity:0}}
+  #trayInfo{text-align:center;font-size:12px;opacity:.65;margin-top:8px;min-height:1.2em}
+
+  #overlay{position:fixed;inset:0;z-index:1000;background:rgba(10,25,20,.78);display:flex;align-items:center;justify-content:center;padding:20px}
+  #overlay.hidden{display:none}
+  .card{background:var(--ivory);color:var(--ink);border-radius:16px;padding:24px;max-width:360px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.5)}
+  .card h2{margin:0 0 8px;font-size:24px;font-weight:800}
+  .card p{margin:0 0 14px;line-height:1.45;font-size:15px}
+  .card .rule{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:14px}
+  .mini{display:inline-flex;gap:3px}
+  .mini i{display:inline-flex;align-items:center;justify-content:center;width:22px;height:28px;border-radius:4px;background:#fff;
+          box-shadow:0 1px 0 var(--ivory-shade);font-style:normal;font-weight:800;font-size:14px}
+  .actions{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+  .primary{background:var(--felt);color:var(--ivory);padding:12px;border-radius:10px;font-size:15px;font-weight:600}
+  .primary:disabled{opacity:.4;cursor:default}
+  .secondary{background:transparent;color:var(--felt);padding:10px;border-radius:10px;font-size:14px}
+
+  @media (prefers-reduced-motion:reduce){.tile,.slot .tile{animation:none!important;transition:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="stats">
+      <div><span>Seviye</span><b id="lvl">1</b></div>
+      <div><span>Kalan</span><b id="left">0</b></div>
+      <div><span>Hamle</span><b id="moves">0</b></div>
+    </div>
+    <div class="tools">
+      <button class="tool" id="undoBtn">Geri al <span id="undoN">3</span></button>
+      <button class="tool" id="shufBtn">Karıştır <span id="shufN">1</span></button>
+      <button class="tool" id="resetBtn">Yeniden</button>
+    </div>
+  </header>
+
+  <div id="hint"></div>
+  <div id="boardWrap"><div id="board"></div></div>
+
+  <div id="trayWrap">
+    <div id="tray"></div>
+    <div id="trayInfo"></div>
+  </div>
+</div>
+
+<div id="overlay"><div class="card" id="card"></div></div>
+
+<script>
+(() => {
+  const MAXNUM = 7, ROW = 7;
+  const SYMS = ['●','◆','▲','■'];
+  const NAMES = ['kırmızı','mavi','sarı','siyah'];
+
+  let level = 1, tiles = [], tray = [], history = [];
+  let traySize = 14, moves = 0, undos = 3, shuffles = 1, continued = false, busy = false;
+  let rng;
+
+  function makeRng(seed){ let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  const ri = n => Math.floor(rng() * n);
+  const shuffle = arr => { for (let i = arr.length - 1; i > 0; i--) { const j = ri(i + 1); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; };
+
+  function levelConfig(l){
+    return { melds: Math.min(6 + Math.floor(l * 1.5), 22), layers: Math.min(2 + Math.floor((l - 1) / 2), 5), jokers: l >= 3 ? 1 : 0 };
+  }
+
+  function genTiles(cfg){
+    const out = [];
+    for (let i = 0; i < cfg.melds; i++){
+      if (rng() < 0.5){ const c = ri(4), s = 1 + ri(MAXNUM - 2); for (let k = 0; k < 3; k++) out.push({ c, n: s + k }); }
+      else { const n = 1 + ri(MAXNUM); shuffle([0,1,2,3]).slice(0,3).forEach(c => out.push({ c, n })); }
+    }
+    for (let j = 0; j < cfg.jokers; j++) out[ri(out.length)] = { joker: true };
+    return shuffle(out).map((t, i) => ({ ...t, id: i, removed: false }));
+  }
+
+  function place(ts, layers){
+    const weights = [1, .75, .55, .4, .3].slice(0, layers);
+    const wsum = weights.reduce((a,b)=>a+b, 0);
+    let counts = weights.map(w => Math.floor(ts.length * w / wsum));
+    counts[0] += ts.length - counts.reduce((a,b)=>a+b, 0);
+    let idx = 0;
+    for (let L = 0; L < layers; L++){
+      const off = (L % 2) * 0.5, size = 7 - (L % 2), slots = [];
+      for (let gx = 0; gx < size; gx++) for (let gy = 0; gy < size; gy++){
+        const x = gx + off, y = gy + off;
+        slots.push({ x, y, d: Math.hypot(x - 3, y - 3) + rng() * (L === 0 ? 3.2 : 1.6) });
+      }
+      slots.sort((a,b) => a.d - b.d);
+      const take = Math.min(counts[L], slots.length);
+      for (let k = 0; k < take && idx < ts.length; k++, idx++){ ts[idx].layer = L; ts[idx].x = slots[k].x; ts[idx].y = slots[k].y; }
+    }
+    while (idx < ts.length){ ts[idx].layer = 0; ts[idx].x = ri(7); ts[idx].y = ri(7); idx++; }
+  }
+
+  function isCovered(t){
+    return tiles.some(o => !o.removed && o !== t && o.layer > t.layer && Math.abs(o.x - t.x) < 1 && Math.abs(o.y - t.y) < 1);
+  }
+
+  // --- meld rules: a group of 3+ tiles. Set (per): same number, distinct colors, max 4. Run (seri): same color, consecutive; jokers fill gaps or ends.
+  function groupValid(ts){
+    if (ts.length < 3) return false;
+    const real = ts.filter(t => !t.joker), j = ts.length - real.length;
+    if (!real.length) return true;
+    if (ts.length <= 4 && real.every(t => t.n === real[0].n) && new Set(real.map(t => t.c)).size === real.length) return true;
+    if (real.every(t => t.c === real[0].c)){
+      const ns = [...new Set(real.map(t => t.n))].sort((a,b) => a - b);
+      if (ns.length !== real.length) return false;
+      const span = ns[ns.length - 1] - ns[0] + 1, gaps = span - ns.length;
+      return gaps <= j && span + (j - gaps) <= MAXNUM;
+    }
+    return false;
+  }
+
+  // contiguous valid groups within each tray row (greedy, longest from each start)
+  function computeGroups(){
+    const gs = [];
+    for (let r = 0; r * ROW < traySize; r++){
+      const start = r * ROW, end = Math.min(start + ROW, traySize);
+      let i = start;
+      while (i < end){
+        if (!tray[i]){ i++; continue; }
+        let best = null;
+        for (let j = i + 1; j < end; j++){ if (!tray[j]) break; if (j >= i + 2 && groupValid(tray.slice(i, j + 1))) best = j; }
+        if (best !== null){ const g = []; for (let k = i; k <= best; k++) g.push(k); gs.push(g); i = best + 1; }
+        else i++;
+      }
+    }
+    return gs;
+  }
+
+  function anyMeldPossible(){
+    const ts = tray.filter(Boolean);
+    for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) for (let k = j + 1; k < ts.length; k++)
+      if (groupValid([ts[i], ts[j], ts[k]])) return true;
+    return false;
+  }
+
+  // --- history / boosters
+  function snapshot(){ history.push({ removed: tiles.map(t => t.removed), tray: tray.map(t => t ? t.id : null), moves }); if (history.length > 60) history.shift(); }
+  function undo(){
+    if (busy || undos <= 0 || !history.length) return;
+    const s = history.pop();
+    tiles.forEach((t, i) => t.removed = s.removed[i]);
+    tray = s.tray.map(id => id === null ? null : tiles[id]);
+    while (tray.length < traySize) tray.push(null);
+    moves = s.moves; undos--;
+    render();
+  }
+  function reshuffle(){
+    if (busy || shuffles <= 0) return;
+    snapshot();
+    const alive = tiles.filter(t => !t.removed);
+    const pos = shuffle(alive.map(t => ({ layer: t.layer, x: t.x, y: t.y })));
+    alive.forEach((t, i) => Object.assign(t, pos[i]));
+    shuffles--;
+    render();
+  }
+
+  // --- flow
+  const isBlocked = t => t.locked || isCovered(t);
+  let tutorial = false, tutStage = 0;
+
+  function tutorialTiles(){
+    const run = [4,5,6].map((n, i) => ({ c: 1, n, layer: 0, x: 1 + i * 2, y: 1.2, tut: 'run' }));
+    const set = [0,2,3].map((c, i) => ({ c, n: 7, layer: 0, x: 1 + i * 2, y: 4.3, tut: 'set', locked: true }));
+    return [...run, ...set].map((t, i) => ({ ...t, id: i, removed: false }));
+  }
+
+  function tutorialHint(){
+    const groups = computeGroups();
+    const inTray = k => tray.filter(t => t && t.tut === k).length;
+    if (tutStage === 0){
+      const n = inTray('run');
+      if (n < 3) return n === 0 ? 'Seri: aynı renk, ardışık sayı. Mavi 4, 5 ve 6\'ya dokun.' : `Devam et, ${3 - n} taş daha.`;
+      return groups.length ? 'Üçü yan yana ve geçerli, o yüzden parlıyor. Gruba dokun, silinsin.' : 'Taşları sürükleyip aynı satırda yan yana getir.';
+    }
+    if (tutStage === 1){
+      const n = inTray('set');
+      if (n < 3) return n === 0 ? 'Per: aynı sayı, farklı renk. Üç 7\'yi al.' : `${3 - n} taş daha.`;
+      return groups.length ? 'Parlayan gruba dokun.' : 'Yan yana getir.';
+    }
+    return '';
+  }
+
+  function tutorialStep(){
+    if (!tutorial) return;
+    if (tutStage === 0 && tiles.filter(t => t.tut === 'run').every(t => t.removed) && !tray.some(t => t && t.tut === 'run')){
+      tutStage = 1; tiles.forEach(t => t.locked = false);
+    }
+  }
+
+  function startLevel(l){
+    level = l; rng = makeRng(1000 + l * 7919);
+    tutorial = l === 1; tutStage = 0;
+    if (tutorial){ tiles = tutorialTiles(); }
+    else { const cfg = levelConfig(l - 1); tiles = genTiles(cfg); place(tiles, cfg.layers); }
+    traySize = 14; tray = Array(traySize).fill(null);
+    history = []; moves = 0; undos = 3; shuffles = 1; continued = false; busy = false;
+    render();
+  }
+
+  const firstEmpty = () => tray.indexOf(null);
+
+  function insertAt(i, t){
+    if (!tray[i]){ tray[i] = t; return true; }
+    let k = tray.indexOf(null, i);
+    if (k !== -1){ for (let m = k; m > i; m--) tray[m] = tray[m - 1]; tray[i] = t; return true; }
+    k = tray.lastIndexOf(null, i);
+    if (k !== -1){ for (let m = k; m < i; m++) tray[m] = tray[m + 1]; tray[i] = t; return true; }
+    return false;
+  }
+
+  function takeFromBoard(t, slot){
+    if (busy || t.removed || isBlocked(t)) return;
+    const target = slot == null ? firstEmpty() : slot;
+    if (target === -1) return;
+    snapshot();
+    if (!insertAt(target, t)){ history.pop(); return; }
+    t.removed = true; moves++;
+    afterAction();
+  }
+
+  function moveInTray(from, to){
+    if (busy || from === to || !tray[from]) return;
+    snapshot();
+    const a = tray[from]; tray[from] = tray[to] || null; tray[to] = a;
+    afterAction();
+  }
+
+  function tapTray(i){
+    if (busy || !tray[i]) return;
+    const g = computeGroups().find(g => g.includes(i));
+    if (!g) return;
+    snapshot(); moves++;
+    busy = true;
+    g.forEach(k => tray[k].clearing = true);
+    render();
+    setTimeout(() => {
+      g.forEach(k => { tray[k].clearing = false; tray[k] = null; });
+      busy = false;
+      afterAction();
+    }, 270);
+  }
+
+  function afterAction(){ tutorialStep(); render(); checkEnd(); }
+
+  function checkEnd(){
+    const left = tiles.filter(t => !t.removed).length;
+    const filled = tray.filter(Boolean).length;
+    if (left === 0 && filled === 0) return win();
+    if (filled >= traySize && !anyMeldPossible()) return lose('Tepsi doldu.', 'Bütün slotlar dolu ve elindeki taşlardan hiçbir per ya da seri çıkmıyor.');
+    if (left === 0 && !anyMeldPossible()) return lose('Tahta bitti, tepsi bitmedi.', `Tepside ${filled} eşleşmeyen taş kaldı.`);
+  }
+
+  function win(){
+    showCard(`<h2>${tutorial ? 'Kuralları biliyorsun' : 'Seviye ' + level + ' bitti'}</h2>
+      <p>${tutorial ? 'Bundan sonra taşlar üst üste geliyor; sadece açıktakiler alınabilir. ' : ''}${moves} hamle. ${3 - undos} geri alma, ${1 - shuffles} karıştırma kullandın${continued ? ', bir kez devam ettin' : ''}.</p>
+      <div class="actions"><button class="primary" id="next">Sonraki seviye</button></div>`);
+    document.getElementById('next').onclick = () => { hideCard(); startLevel(level + 1); };
+  }
+
+  function lose(title, why){
+    showCard(`<h2>${title}</h2><p>${why}</p>
+      <div class="actions">
+        <button class="primary" id="cont" ${continued ? 'disabled' : ''}>${continued ? 'Devam hakkı kullanıldı' : '+2 slot ile devam et'}</button>
+        <button class="secondary" id="retry">Seviyeyi yeniden oyna</button>
+      </div>`);
+    document.getElementById('cont').onclick = () => { if (continued) return; continued = true; traySize += 2; tray.push(null, null); hideCard(); render(); checkEnd(); };
+    document.getElementById('retry').onclick = () => { hideCard(); startLevel(level); };
+  }
+
+  function showCard(html){ document.getElementById('card').innerHTML = html; document.getElementById('overlay').classList.remove('hidden'); }
+  function hideCard(){ document.getElementById('overlay').classList.add('hidden'); }
+
+  // --- drag & tap (pointer events)
+  let drag = null;
+  function onDown(e, src){
+    if (busy || e.button > 0) return;
+    e.preventDefault();
+    drag = { src, x0: e.clientX, y0: e.clientY, active: false, el: e.currentTarget, ghost: null, over: null };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch(_){}
+  }
+  function onMove(e){
+    if (!drag) return;
+    const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+    if (!drag.active){
+      if (Math.hypot(dx, dy) < 8) return;
+      drag.active = true;
+      const r = drag.el.getBoundingClientRect();
+      const g = drag.el.cloneNode(true);
+      g.classList.add('ghost'); g.classList.remove('free','ready','covered');
+      g.style.left = '0px'; g.style.top = '0px'; g.style.zIndex = '2000';
+      g.style.width = r.width + 'px'; g.style.height = r.height + 'px';
+      g.style.transform = `translate(${r.left}px,${r.top}px)`;
+      document.body.appendChild(g);
+      drag.ghost = g; drag.ox = drag.x0 - r.left; drag.oy = drag.y0 - r.top;
+      drag.el.classList.add('dragging');
+    }
+    drag.ghost.style.transform = `translate(${e.clientX - drag.ox}px,${e.clientY - drag.oy}px)`;
+    const slot = slotAt(e.clientX, e.clientY);
+    if (drag.over && drag.over !== slot) drag.over.classList.remove('over');
+    if (slot) slot.classList.add('over');
+    drag.over = slot;
+  }
+  function onUp(e){
+    if (!drag) return;
+    const d = drag; drag = null;
+    if (d.over) d.over.classList.remove('over');
+    if (!d.active){
+      if (d.src.type === 'board') takeFromBoard(d.src.tile, null);
+      else tapTray(d.src.index);
+      return;
+    }
+    d.ghost.remove(); d.el.classList.remove('dragging');
+    const slot = slotAt(e.clientX, e.clientY);
+    if (slot){
+      const i = +slot.dataset.i;
+      if (d.src.type === 'board') takeFromBoard(d.src.tile, i);
+      else moveInTray(d.src.index, i);
+    } else render();
+  }
+  function slotAt(x, y){ const el = document.elementFromPoint(x, y); return el ? el.closest('.slot') : null; }
+  window.addEventListener('pointermove', onMove, { passive: false });
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', () => { if (drag){ if (drag.ghost) drag.ghost.remove(); drag = null; render(); } });
+
+  // --- render
+  const board = document.getElementById('board'), trayEl = document.getElementById('tray');
+
+  function tileEl(t){
+    const el = document.createElement('div');
+    el.className = 'tile ' + (t.joker ? 'joker' : 'c' + t.c);
+    el.innerHTML = t.joker ? `<div class="n">★</div><div class="s">joker</div>` : `<div class="n">${t.n}</div><div class="s">${SYMS[t.c]}</div>`;
+    el.setAttribute('aria-label', t.joker ? 'joker' : `${NAMES[t.c]} ${t.n}`);
+    return el;
+  }
+
+  function render(){
+    const u = board.clientWidth / 7.5;
+    board.style.setProperty('--u', u + 'px');
+    board.innerHTML = '';
+    let left = 0;
+    tiles.filter(t => !t.removed).sort((a,b) => a.layer - b.layer || a.y - b.y).forEach(t => {
+      left++;
+      const el = tileEl(t), cov = isBlocked(t);
+      el.classList.add(cov ? (t.locked ? 'locked' : 'covered') : 'free');
+      el.style.left = (t.x * u + u * 0.03) + 'px';
+      el.style.top = (t.y * u - t.layer * u * 0.06) + 'px';
+      el.style.zIndex = t.layer * 100 + Math.round(t.y * 10);
+      if (!cov){
+        el.onpointerdown = e => onDown(e, { type: 'board', tile: t });
+        el.tabIndex = 0;
+        el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') takeFromBoard(t, null); };
+      }
+      board.appendChild(el);
+    });
+
+    const groups = computeGroups(), ready = new Set(groups.flat());
+    trayEl.innerHTML = '';
+    for (let i = 0; i < traySize; i++){
+      const s = document.createElement('div'); s.className = 'slot'; s.dataset.i = i;
+      if (tray[i]){
+        const el = tileEl(tray[i]);
+        if (ready.has(i)) el.classList.add('ready');
+        if (tray[i].clearing) el.classList.add('clearing');
+        el.onpointerdown = e => onDown(e, { type: 'tray', index: i });
+        s.appendChild(el);
+      }
+      trayEl.appendChild(s);
+    }
+    const filled = tray.filter(Boolean).length;
+    document.getElementById('hint').textContent = tutorial ? tutorialHint() : '';
+    document.getElementById('trayInfo').textContent = groups.length
+      ? `${filled} / ${traySize} dolu — parlayan gruba dokun, silinsin`
+      : `${filled} / ${traySize} dolu — yan yana getir: 3+ seri ya da per`;
+    document.getElementById('lvl').textContent = level;
+    document.getElementById('left').textContent = left;
+    document.getElementById('moves').textContent = moves;
+    document.getElementById('undoN').textContent = undos;
+    document.getElementById('shufN').textContent = shuffles;
+    document.getElementById('undoBtn').disabled = undos <= 0 || !history.length;
+    document.getElementById('shufBtn').disabled = shuffles <= 0;
+  }
+
+  document.getElementById('undoBtn').onclick = undo;
+  document.getElementById('shufBtn').onclick = reshuffle;
+  document.getElementById('resetBtn').onclick = () => startLevel(level);
+  window.addEventListener('resize', render);
+
+  function intro(){
+    showCard(`<h2>Per &amp; Seri</h2>
+      <p>Açıktaki taşa dokun, ilk boş slota iner; ya da sürükleyip istediğin slota bırak. Tepside taşları sürükleyerek yerlerini değiştir.</p>
+      <div class="rule"><span class="mini"><i style="color:var(--blue)">4</i><i style="color:var(--blue)">5</i><i style="color:var(--blue)">6</i></span> Seri: aynı renk, ardışık sayı (3+)</div>
+      <div class="rule"><span class="mini"><i style="color:var(--red)">7</i><i style="color:var(--amber)">7</i><i style="color:var(--black)">7</i></span> Per: aynı sayı, farklı renk (3–4)</div>
+      <div class="rule"><span class="mini"><i>★</i></span> Joker her yere uyar</div>
+      <p style="margin-top:12px">Aynı satırda yan yana duran geçerli grup parlar; dokununca silinir. 14 slot dolar ve grup çıkmazsa kaybedersin. İlk seviye kısa bir alıştırma.</p>
+      <div class="actions"><button class="primary" id="start">Başla</button></div>`);
+    document.getElementById('start').onclick = () => { hideCard(); startLevel(1); };
+  }
+
+  startLevel(1);
+  intro();
+})();
+</script>
+</body>
+</html>
