@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Hat 42 — otobüs rota puzzle</title>
+<style>
+  :root{
+    --bg:#111418; --panel:#1b2027; --line:#2a313b; --asphalt:#2c333d; --asphalt-hi:#3a4350;
+    --paint:#4a5566; --text:#eef1f5; --muted:#8a94a3; --bus:#f2c034; --fuel:#4fd18b; --warn:#ff5d5d;
+    --red:#ff5a5f; --blue:#3b8bff; --green:#3ad17c; --purple:#b97cff;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;touch-action:none}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:"Avenir Next","Segoe UI",system-ui,sans-serif;overscroll-behavior:none}
+  body{display:flex;justify-content:center}
+  #app{width:100%;max-width:440px;min-height:100vh;display:flex;flex-direction:column;padding:10px 12px 14px;gap:10px}
+
+  header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .pill{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;line-height:1.15}
+  .pill b{display:block;font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+  .pill span{color:var(--muted)}
+  #target{flex:1;text-align:center}
+  #target small{color:var(--muted);font-weight:500}
+  button{font:inherit;border:0;cursor:pointer}
+  .tool{background:var(--panel);border:1px solid var(--line);color:var(--text);padding:9px 12px;border-radius:10px;font-size:13px}
+
+  #fuelWrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;display:flex;align-items:center;gap:10px;font-size:13px}
+  #fuelBar{flex:1;height:10px;background:#0d1013;border-radius:6px;overflow:hidden}
+  #fuelFill{height:100%;width:100%;background:var(--fuel);border-radius:6px;transition:width .25s ease,background .25s}
+  #fuelNum{font-variant-numeric:tabular-nums;min-width:56px;text-align:right}
+
+  #stage{position:relative;flex:1;display:flex;align-items:center;justify-content:center;min-height:0}
+  canvas{width:100%;max-height:100%;aspect-ratio:8/10;border-radius:14px;background:#171b21;box-shadow:inset 0 0 0 1px var(--line),0 20px 40px rgba(0,0,0,.45);display:block}
+  #tip{position:absolute;left:0;right:0;bottom:12px;text-align:center;font-size:13px;color:#ffe9a8;pointer-events:none;text-shadow:0 1px 2px #000}
+
+  #seats{display:flex;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+  #seats .label{font-size:12px;color:var(--muted);width:64px;line-height:1.2}
+  #seatRow{display:flex;gap:6px;flex:1;justify-content:center}
+  .seat{width:30px;height:30px;border-radius:8px;background:#0d1013;border:1px dashed #2a313b;position:relative}
+  .seat i{position:absolute;inset:5px;border-radius:50%;animation:hop .22s ease-out}
+  @keyframes hop{from{transform:translateY(-10px) scale(.6);opacity:0}}
+
+  #overlay{position:fixed;inset:0;z-index:100;background:rgba(6,8,11,.82);display:flex;align-items:center;justify-content:center;padding:20px}
+  #overlay.hidden{display:none}
+  .card{background:#f4f1ea;color:#171a1f;border-radius:18px;padding:24px;max-width:340px;width:100%;box-shadow:0 30px 60px rgba(0,0,0,.6);text-align:center}
+  .card h2{margin:0 0 6px;font-size:24px}
+  .card p{margin:0 0 12px;line-height:1.45;font-size:15px;color:#3b414b}
+  .stars{font-size:32px;letter-spacing:4px;margin:6px 0 10px;color:#d9d3c4}
+  .stars b{color:#f2b234}
+  .actions{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+  .primary{background:#1f7a4f;color:#fff;padding:13px;border-radius:12px;font-size:15px;font-weight:600}
+  .primary:disabled{opacity:.4;cursor:default}
+  .secondary{background:transparent;color:#1f7a4f;padding:10px;border-radius:12px;font-size:14px}
+  .legend{display:flex;justify-content:center;gap:14px;font-size:13px;color:#3b414b;margin:8px 0 4px}
+  .legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px;background:var(--c)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="pill"><span>Seviye</span><b id="lvl">1</b></div>
+    <div class="pill" id="target"><span>Teslim</span><b><span id="delivered">0</span>/<span id="total">0</span> <small id="goalNote"></small></b></div>
+    <button class="tool" id="resetBtn">Yeniden</button>
+  </header>
+
+  <div id="fuelWrap"><span>Yakıt</span><div id="fuelBar"><div id="fuelFill"></div></div><span id="fuelNum">0 / 0</span></div>
+
+  <div id="stage"><canvas id="cv" width="512" height="640"></canvas><div id="tip"></div></div>
+
+  <div id="seats"><div class="label">Otobüs<br>6 koltuk</div><div id="seatRow"></div></div>
+</div>
+
+<div id="overlay"><div class="card" id="card"></div></div>
+
+<script>
+(() => {
+  // ---------- constants ----------
+  const W = 8, H = 10, CAP = 6, T = 64;
+  const PAL = ['#ff5a5f','#3b8bff','#3ad17c','#b97cff'];
+  const DIRS = [[1,0],[-1,0],[0,1],[0,-1]];
+  const REV = [1,0,3,2];
+
+  // ---------- rng ----------
+  let rng;
+  function makeRng(seed){ let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  const ri = n => Math.floor(rng() * n);
+
+  // ---------- level params ----------
+  function params(l){
+    return {
+      pickups: l === 1 ? 1 : Math.min(1 + Math.ceil(l / 2), 5),
+      colors: l === 1 ? 1 : Math.min(1 + Math.ceil(l / 2), 4),
+      minCount: 2,
+      maxCount: l < 3 ? 3 : l < 6 ? 4 : 5,
+      segments: Math.min(3 + Math.ceil(l / 3), 6),
+      minLen: 5,
+      minSw: l === 1 ? 2 : 3,
+      maxSw: Math.min(6 + 2 * l, 22),
+      maxTiles: Math.min(24 + 4 * l, 80),
+      minJunctions: l === 1 ? 1 : 2,
+      maxJunctions: Math.min(2 + Math.floor(l / 2), 6),
+      fuelSlack: l < 4 ? 1.5 : l < 8 ? 1.3 : 1.2,
+      patienceSlack: l < 4 ? 14 : l < 8 ? 10 : 7,   // in tiles
+      allDelivered: l < 4
+    };
+  }
+
+  // ---------- map generation ----------
+  function genRoads(p){
+    const g = Array.from({ length: H }, () => Array(W).fill(0));
+    for (let i = 0; i < p.segments; i++){
+      if (rng() < 0.5){ const y = 1 + ri(H - 2), x0 = ri(W - p.minLen + 1), len = p.minLen + ri(W - x0 - p.minLen + 1); for (let x = x0; x < Math.min(W, x0 + len); x++) g[y][x] = 1; }
+      else { const x = 1 + ri(W - 2), y0 = ri(H - p.minLen + 1), len = p.minLen + ri(H - y0 - p.minLen + 1); for (let y = y0; y < Math.min(H, y0 + len); y++) g[y][x] = 1; }
+    }
+    const seen = Array.from({ length: H }, () => Array(W).fill(false));
+    let best = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){
+      if (!g[y][x] || seen[y][x]) continue;
+      const comp = [], st = [[x, y]]; seen[y][x] = true;
+      while (st.length){ const [cx, cy] = st.pop(); comp.push([cx, cy]);
+        for (const [dx, dy] of DIRS){ const nx = cx + dx, ny = cy + dy; if (nx >= 0 && ny >= 0 && nx < W && ny < H && g[ny][nx] && !seen[ny][nx]){ seen[ny][nx] = true; st.push([nx, ny]); } } }
+      if (comp.length > best.length) best = comp;
+    }
+    const road = Array.from({ length: H }, () => Array(W).fill(0));
+    best.forEach(([x, y]) => road[y][x] = 1);
+    return road;
+  }
+  const onRoad = (road, x, y) => x >= 0 && y >= 0 && x < W && y < H && road[y][x] === 1;
+  const degree = (road, x, y) => DIRS.reduce((n, [dx, dy]) => n + (onRoad(road, x + dx, y + dy) ? 1 : 0), 0);
+
+  // slide in direction d: follows single-exit corners, stops at junctions (3+ roads), stops and dead ends
+  // shouldStop(stop) decides whether a stop is worth halting at (waiting passengers / matching drop)
+  function slideFrom(L, x, y, d, shouldStop){
+    let [dx, dy] = DIRS[d];
+    if (!onRoad(L.road, x + dx, y + dy)) return null;
+    let cx = x, cy = y; const path = [];
+    for (let guard = 0; guard < W * H; guard++){
+      cx += dx; cy += dy; path.push({ x: cx, y: cy, d });
+      if (L.stopAt[cy][cx] !== -1 && shouldStop(L.stops[L.stopAt[cy][cx]])) break;
+      if (degree(L.road, cx, cy) > 2) break;
+      if (onRoad(L.road, cx + dx, cy + dy)) continue;
+      let next = -1;
+      for (let k = 0; k < 4; k++){ if (k === REV[d]) continue; const [ex, ey] = DIRS[k]; if (onRoad(L.road, cx + ex, cy + ey)) next = k; }
+      if (next === -1) break;
+      d = next; [dx, dy] = DIRS[d];
+    }
+    return { x: cx, y: cy, cost: path.length, path };
+  }
+
+  // ---------- solver: Dijkstra on fuel, one swipe = one slide ----------
+  function solve(L, limit = 400000){
+    const pickups = L.stops.filter(s => s.type === 'pickup');
+    const key = s => s.x + ',' + s.y + '|' + s.counts.join('') + '|' + s.bus.join('');
+    const start = { x: L.start.x, y: L.start.y, counts: pickups.map(s => s.count), bus: Array(4).fill(0), fuel: 0, swipes: 0, prev: null };
+    const heap = [start]; const dist = new Map(); dist.set(key(start), 0);
+    const push = s => { heap.push(s); let i = heap.length - 1; while (i > 0){ const p = (i - 1) >> 1; if (heap[p].fuel <= heap[i].fuel) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length){ heap[0] = last; let i = 0; for (;;){ let l = 2 * i + 1, r = l + 1, m = i; if (l < heap.length && heap[l].fuel < heap[m].fuel) m = l; if (r < heap.length && heap[r].fuel < heap[m].fuel) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    let expanded = 0;
+    while (heap.length){
+      const s = pop();
+      if (s.counts.every(c => c === 0) && s.bus.every(c => c === 0)) return s;
+      const k = key(s); if (dist.get(k) < s.fuel) continue;
+      if (++expanded > limit) return null;
+      const worth = st => st.type === 'pickup' ? s.counts[pickups.indexOf(st)] > 0 : s.bus[st.color] > 0;
+      for (let d = 0; d < 4; d++){
+        const sl = slideFrom(L, s.x, s.y, d, worth); if (!sl) continue;
+        const counts = s.counts.slice(), bus = s.bus.slice();
+        const si = L.stopAt[sl.y][sl.x];
+        if (si !== -1 && worth(L.stops[si])){
+          const st = L.stops[si];
+          if (st.type === 'pickup'){ const pi = pickups.indexOf(st); const space = CAP - bus.reduce((a, b) => a + b, 0); const take = Math.min(space, counts[pi]); counts[pi] -= take; bus[st.color] += take; }
+          else bus[st.color] = 0;
+        }
+        const ns = { x: sl.x, y: sl.y, counts, bus, fuel: s.fuel + sl.cost, swipes: s.swipes + 1, prev: s, dir: d };
+        const nk = key(ns);
+        if (!dist.has(nk) || dist.get(nk) > ns.fuel){ dist.set(nk, ns.fuel); push(ns); }
+      }
+    }
+    return null;
+  }
+
+  // ---------- level assembly ----------
+  function buildLevel(l, relax = 0){
+    const p = params(l);
+    p.maxTiles += relax * 12; p.maxSw += relax * 4; p.maxJunctions += relax; p.minJunctions = Math.max(1, p.minJunctions - relax); p.pickups = Math.max(1, p.pickups - (relax > 1 ? 1 : 0));
+    for (let attempt = 0; attempt < 250; attempt++){
+      const road = genRoads(p);
+      const cells = []; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (road[y][x]) cells.push({ x, y, deg: degree(road, x, y) });
+      if (cells.length < 20) continue;
+      const junctions = cells.filter(c => c.deg > 2).length;
+      if (junctions < p.minJunctions || junctions > p.maxJunctions) continue;
+      const cand = cells.filter(c => c.deg <= 2);
+      const need = p.pickups + p.colors + 1;
+      if (cand.length < need) continue;
+      const chosen = [], pool = cand.slice();
+      while (chosen.length < need && pool.length){
+        const c = pool.splice(ri(pool.length), 1)[0];
+        if (chosen.every(o => Math.abs(o.x - c.x) + Math.abs(o.y - c.y) >= 3)) chosen.push(c);
+      }
+      if (chosen.length < need) continue;
+      const start = chosen[0], stops = [];
+      for (let i = 0; i < p.pickups; i++) stops.push({ x: chosen[1 + i].x, y: chosen[1 + i].y, type: 'pickup', color: i % p.colors, count: p.minCount + ri(p.maxCount - p.minCount + 1) });
+      for (let c = 0; c < p.colors; c++) stops.push({ x: chosen[1 + p.pickups + c].x, y: chosen[1 + p.pickups + c].y, type: 'drop', color: c });
+      const stopAt = Array.from({ length: H }, () => Array(W).fill(-1));
+      stops.forEach((s, i) => stopAt[s.y][s.x] = i);
+      const L = { road, stops, stopAt, start: { x: start.x, y: start.y } };
+      const sol = solve(L);
+      if (!sol || sol.fuel > p.maxTiles || sol.fuel < 8) continue;
+      if (sol.swipes < p.minSw || sol.swipes > p.maxSw) continue;
+      if (sol.fuel / sol.swipes < 2.2 - relax * 0.3) continue; // long rides between decisions
+      const path = []; for (let s = sol; s.prev; s = s.prev) path.unshift(s);
+      const decisions = sol.swipes;
+      const pickups = stops.filter(s => s.type === 'pickup');
+      pickups.forEach((s, pi) => { let at = path.findIndex(st => st.counts[pi] === 0); if (at === -1) at = path.length - 1; s.patience = Math.max(path[at].fuel + p.patienceSlack, Math.ceil(sol.fuel * 0.6)); s.patienceMax = s.patience; });
+      L.solution = path.map(st => st.dir);
+      const total = pickups.reduce((a, s) => a + s.count, 0);
+      L.total = total;
+      L.target = p.allDelivered ? total : Math.max(Math.ceil(total * 0.75), total - 2);
+      L.fuelMax = Math.ceil(sol.fuel * p.fuelSlack) + 2;
+      L.optFuel = sol.fuel; L.decisions = decisions;
+      return L;
+    }
+    return null;
+  }
+
+  // ---------- game state ----------
+  let level = 1, L = null, fuel = 0, delivered = 0, bus = null, moving = false, busy = false, continued = false, painted = null, particles = [], gameOver = false;
+  let pulseT = 0, lastTime = 0;
+
+  function startLevel(l){
+    level = l; rng = makeRng(90210 + l * 7919);
+    L = null;
+    for (let relax = 0; relax < 4 && !L; relax++) L = buildLevel(l, relax);
+    L.stops.forEach(s => { s.left = false; });
+    fuel = L.fuelMax; delivered = 0; moving = false; busy = false; continued = false; gameOver = false; particles = [];
+    bus = { x: L.start.x, y: L.start.y, px: L.start.x, py: L.start.y, seats: [], face: 0, path: [], i: 0, t: 0 };
+    painted = Array.from({ length: H }, () => Array(W).fill(false)); painted[bus.y][bus.x] = true;
+    updateUI();
+    setTip(level === 1 ? 'Kaydır: otobüs bir sonraki kavşağa ya da durağa kadar gider.' : level === 2 ? 'Bekleyenlerin sabrı halkayla gösterilir; otobüs yol aldıkça azalır.' : '');
+  }
+
+  function setTip(t){ document.getElementById('tip').textContent = t; }
+
+  const worthStopping = st => st.type === 'pickup' ? (st.count > 0 && !st.left) : bus.seats.includes(st.color);
+
+  function trySwipe(d){
+    if (moving || busy || gameOver || !L || fuel <= 0) return;
+    const sl = slideFrom(L, bus.x, bus.y, d, worthStopping); if (!sl) return;
+    bus.path = sl.path.slice(0, Math.min(sl.cost, fuel)); bus.i = 0; bus.t = 0; bus.face = d; moving = true;
+    setTip('');
+  }
+
+  // called each time the bus fully enters the next tile of its path
+  function enterTile(){
+    const to = bus.path[bus.i];
+    bus.x = to.x; bus.y = to.y; bus.px = bus.x; bus.py = bus.y;
+    fuel--; painted[bus.y][bus.x] = true;
+    L.stops.forEach(st => { if (st.type === 'pickup' && st.count > 0 && !st.left){ st.patience--; if (st.patience <= 0){ st.left = true; st.count = 0; setTip('Bir grup beklemekten vazgeçti.'); } } });
+    bus.i++; bus.t = 0;
+    if (bus.i >= bus.path.length){ moving = false; updateUI(); halt(); }
+    else { bus.face = bus.path[bus.i].d; updateUI(); }
+  }
+
+  function halt(){
+    const s = L.stopAt[bus.y][bus.x] !== -1 ? L.stops[L.stopAt[bus.y][bus.x]] : null;
+    let acted = false;
+    if (s && s.type === 'pickup' && s.count > 0 && !s.left){
+      const space = CAP - bus.seats.length; const take = Math.min(space, s.count);
+      for (let i = 0; i < take; i++){ bus.seats.push(s.color); spawnParticle(s.x, s.y, bus.x, bus.y, s.color, i * 60); }
+      s.count -= take; acted = true;
+      if (take === 0) setTip('Otobüs dolu. Önce birilerini indir.');
+      else if (s.count > 0) setTip(`${s.count} yolcu sığmadı, bekliyor.`);
+    }
+    if (s && s.type === 'drop'){
+      const before = bus.seats.length;
+      bus.seats = bus.seats.filter(c => c !== s.color);
+      const n = before - bus.seats.length;
+      for (let i = 0; i < n; i++) spawnParticle(bus.x, bus.y, s.x, s.y, s.color, i * 60);
+      delivered += n; if (n) acted = true;
+    }
+    updateUI();
+    busy = true; setTimeout(() => { busy = false; checkEnd(); }, acted ? 380 : 80);
+  }
+
+  function checkEnd(){
+    if (gameOver) return;
+    const waiting = L.stops.filter(s => s.type === 'pickup').reduce((a, s) => a + s.count, 0);
+    const possible = delivered + bus.seats.length + waiting;
+    if (waiting === 0 && bus.seats.length === 0 && delivered >= L.target) return finish(true);
+    if (possible < L.target) return finish(false, 'Çok yolcu vazgeçti.', `Hedef ${L.target}, en fazla ${possible} teslim edebilirsin.`);
+    if (fuel <= 0) return finish(false, 'Yakıt bitti.', `${delivered}/${L.total} yolcu teslim edildi.`);
+  }
+
+  function stars(){ if (delivered < L.total) return 1; return fuel >= L.fuelMax * 0.3 ? 3 : 2; }
+
+  function finish(win, title, why){
+    gameOver = true;
+    if (win){
+      const n = stars();
+      showCard(`<h2>Hat tamamlandı</h2>
+        <div class="stars">${'<b>★</b>'.repeat(n)}${'★'.repeat(3 - n)}</div>
+        <p>${delivered}/${L.total} yolcu teslim, ${fuel} yakıt arttı.${n < 3 ? (delivered < L.total ? ' Herkesi taşıyabilirsen 2 yıldız,' : ' Yakıtın %30\u2019u kalırsa') + ' 3 yıldız.' : ''}</p>
+        <div class="actions"><button class="primary" id="next">Sonraki hat</button><button class="secondary" id="again">Tekrar oyna</button></div>`);
+      document.getElementById('next').onclick = () => { hideCard(); startLevel(level + 1); };
+      document.getElementById('again').onclick = () => { hideCard(); startLevel(level); };
+    } else {
+      const fuelFail = fuel <= 0;
+      showCard(`<h2>${title}</h2><p>${why}</p>
+        <div class="actions">
+          ${fuelFail ? `<button class="primary" id="cont" ${continued ? 'disabled' : ''}>${continued ? 'Devam hakkı kullanıldı' : '+8 yakıt ile devam et'}</button>` : ''}
+          <button class="${fuelFail ? 'secondary' : 'primary'}" id="retry">Hattı yeniden dene</button>
+        </div>`);
+      const c = document.getElementById('cont');
+      if (c) c.onclick = () => { if (continued) return; continued = true; fuel += 8; gameOver = false; hideCard(); updateUI(); };
+      document.getElementById('retry').onclick = () => { hideCard(); startLevel(level); };
+    }
+  }
+
+  function showCard(html){ document.getElementById('card').innerHTML = html; document.getElementById('overlay').classList.remove('hidden'); }
+  function hideCard(){ document.getElementById('overlay').classList.add('hidden'); }
+
+  function spawnParticle(fx, fy, tx, ty, color, delay){ particles.push({ fx, fy, tx, ty, color, t: -delay / 1000, dur: .38 }); }
+
+  // ---------- UI ----------
+  function updateUI(){
+    document.getElementById('lvl').textContent = level;
+    document.getElementById('delivered').textContent = delivered;
+    document.getElementById('total').textContent = L.total;
+    document.getElementById('goalNote').textContent = L.target < L.total ? `(hedef ${L.target})` : '';
+    document.getElementById('fuelNum').textContent = `${fuel} / ${L.fuelMax}`;
+    const f = document.getElementById('fuelFill'); const r = fuel / L.fuelMax;
+    f.style.width = (r * 100) + '%'; f.style.background = r < .25 ? 'var(--warn)' : r < .5 ? '#f2c034' : 'var(--fuel)';
+    const row = document.getElementById('seatRow'); row.innerHTML = '';
+    for (let i = 0; i < CAP; i++){ const s = document.createElement('div'); s.className = 'seat'; if (bus.seats[i] !== undefined){ const d = document.createElement('i'); d.style.background = PAL[bus.seats[i]]; s.appendChild(d); } row.appendChild(s); }
+  }
+
+  // ---------- drawing ----------
+  const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  function rr(x, y, w, h, r){ ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+  function draw(dt){
+    pulseT += dt;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){
+      if (L.road[y][x]) continue;
+      ctx.fillStyle = ((x + y) % 2) ? '#1c2129' : '#1a1f26'; rr(x * T + 6, y * T + 6, T - 12, T - 12, 8); ctx.fill();
+    }
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){
+      if (!L.road[y][x]) continue;
+      const px = x * T, py = y * T;
+      ctx.fillStyle = painted[y][x] ? '#3a4656' : '#2a313b';
+      ctx.fillRect(px + 12, py + 12, T - 24, T - 24);
+      if (onRoad(L.road, x + 1, y)) ctx.fillRect(px + T / 2, py + 12, T / 2 + 1, T - 24);
+      if (onRoad(L.road, x - 1, y)) ctx.fillRect(px - 1, py + 12, T / 2 + 1, T - 24);
+      if (onRoad(L.road, x, y + 1)) ctx.fillRect(px + 12, py + T / 2, T - 24, T / 2 + 1);
+      if (onRoad(L.road, x, y - 1)) ctx.fillRect(px + 12, py - 1, T - 24, T / 2 + 1);
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){
+      if (!L.road[y][x]) continue; const cx = x * T + T / 2, cy = y * T + T / 2;
+      if (onRoad(L.road, x + 1, y)){ ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + T, cy); ctx.stroke(); }
+      if (onRoad(L.road, x, y + 1)){ ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy + T); ctx.stroke(); }
+    }
+    ctx.setLineDash([]);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){
+      if (!L.road[y][x] || degree(L.road, x, y) <= 2 || L.stopAt[y][x] !== -1) continue;
+      ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.beginPath(); ctx.arc(x * T + T / 2, y * T + T / 2, 7, 0, Math.PI * 2); ctx.fill();
+    }
+    L.stops.forEach(s => {
+      const cx = s.x * T + T / 2, cy = s.y * T + T / 2, col = PAL[s.color];
+      if (s.type === 'drop'){
+        ctx.fillStyle = col; ctx.globalAlpha = .18; rr(cx - 20, cy - 20, 40, 40, 9); ctx.fill(); ctx.globalAlpha = 1;
+        ctx.strokeStyle = col; ctx.lineWidth = 3; rr(cx - 20, cy - 20, 40, 40, 9); ctx.stroke();
+        ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(cx - 11, cy + 2); ctx.lineTo(cx, cy - 9); ctx.lineTo(cx + 11, cy + 2); ctx.closePath(); ctx.fill();
+        ctx.fillRect(cx - 8, cy + 2, 16, 9);
+      } else {
+        if (s.left){
+          ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, 14, 0, Math.PI * 2); ctx.stroke();
+          ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✕', cx, cy);
+          return;
+        }
+        if (s.count === 0){ ctx.fillStyle = col; ctx.globalAlpha = .25; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; return; }
+        const r = Math.max(0, s.patience / s.patienceMax), low = s.patience <= 5;
+        ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(cx, cy, 22, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = low ? '#ff5d5d' : col; ctx.lineWidth = 5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(cx, cy, 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * r); ctx.stroke();
+        const pulse = low ? 1 + Math.sin(pulseT * 8) * .06 : 1;
+        ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy, 14 * pulse, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 15px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(s.count, cx, cy + 1);
+        if (low){ ctx.fillStyle = '#ff5d5d'; ctx.font = 'bold 11px system-ui'; ctx.fillText(s.patience, cx + 22, cy - 22); }
+      }
+    });
+    // bus
+    const bx = bus.px * T + T / 2, by = bus.py * T + T / 2;
+    ctx.save(); ctx.translate(bx, by);
+    const ang = [0, Math.PI, Math.PI / 2, -Math.PI / 2][bus.face]; ctx.rotate(ang);
+    ctx.fillStyle = 'rgba(0,0,0,.45)'; rr(-19, -12 + 4, 38, 26, 7); ctx.fill();
+    ctx.fillStyle = '#f2c034'; rr(-19, -13, 38, 26, 7); ctx.fill();
+    ctx.fillStyle = '#2b2f36'; rr(-13, -9, 26, 18, 4); ctx.fill();
+    ctx.fillStyle = '#fff8dc'; ctx.fillRect(15, -10, 4, 6); ctx.fillRect(15, 4, 4, 6);
+    bus.seats.forEach((c, i) => { ctx.fillStyle = PAL[c]; ctx.beginPath(); ctx.arc(-9 + (i % 3) * 8, -4 + Math.floor(i / 3) * 8, 3.2, 0, Math.PI * 2); ctx.fill(); });
+    ctx.restore();
+    particles.forEach(p => { if (p.t < 0) return; const k = Math.min(1, p.t / p.dur), e = 1 - Math.pow(1 - k, 3);
+      const x = (p.fx + (p.tx - p.fx) * e) * T + T / 2, y = (p.fy + (p.ty - p.fy) * e) * T + T / 2 - Math.sin(k * Math.PI) * 26;
+      ctx.fillStyle = PAL[p.color]; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = 1.5; ctx.stroke(); });
+  }
+
+  function update(dt){
+    if (moving){
+      const speed = 8; // tiles per second
+      bus.t += dt * speed;
+      if (bus.t >= 1){ enterTile(); }
+      else { const to = bus.path[bus.i]; bus.px = bus.x + (to.x - bus.x) * bus.t; bus.py = bus.y + (to.y - bus.y) * bus.t; }
+    }
+    particles.forEach(p => p.t += dt); particles = particles.filter(p => p.t < p.dur);
+  }
+
+  function loop(ts){
+    const dt = Math.min(.05, (ts - lastTime) / 1000 || 0); lastTime = ts;
+    if (L){ update(dt); draw(dt); }
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- input ----------
+  let sx = 0, sy = 0, down = false;
+  cv.addEventListener('pointerdown', e => { down = true; sx = e.clientX; sy = e.clientY; });
+  window.addEventListener('pointerup', e => {
+    if (!down) return; down = false;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (Math.hypot(dx, dy) < 14) return;
+    trySwipe(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 0 : 1) : (dy > 0 ? 2 : 3));
+  });
+  window.addEventListener('keydown', e => {
+    const m = { ArrowRight: 0, d: 0, ArrowLeft: 1, a: 1, ArrowDown: 2, s: 2, ArrowUp: 3, w: 3 };
+    if (m[e.key] !== undefined){ e.preventDefault(); trySwipe(m[e.key]); }
+  });
+  document.getElementById('resetBtn').onclick = () => startLevel(level);
+
+  function intro(){
+    showCard(`<h2>Hat 42</h2>
+      <p>Otobüsü kaydırarak sür; kavşaklarda, yolcu bekleyen duraklarda ve indireceğin yolcu varsa evlerde durur. Boş durakları geçer, köşeleri kendi döner.</p>
+      <div class="legend"><span style="--c:#ff5a5f">Yolcu</span><span style="--c:#3b8bff">Ev = bırakma</span></div>
+      <p>Her kare bir yakıt yer. Bekleyenlerin sabrı yol aldıkça azalır, halka bitince giderler. Herkesi taşı, yakıtı artır, yıldızları topla.</p>
+      <div class="actions"><button class="primary" id="start">Başla</button></div>`);
+    document.getElementById('start').onclick = () => { hideCard(); startLevel(1); };
+  }
+
+  startLevel(1);
+  requestAnimationFrame(loop);
+  intro();
+})();
+</script>
+</body>
+</html>
